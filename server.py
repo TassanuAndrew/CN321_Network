@@ -86,7 +86,12 @@ class GameServer:
 
     # ------------------------------------------------------------------ TCP --
     def handle_client(self, conn, addr):
-        # First message must be room selection
+        # Send room player counts first so client can show them in lobby
+        with self.lock:
+            room_counts = {str(k): len(v["players"]) for k, v in self.rooms.items()}
+        self.send_to_client(conn, {"type": "ROOM_INFO", "rooms": room_counts})
+
+        # Wait for room selection from client
         try:
             buf = ""
             while "\n" not in buf:
@@ -95,8 +100,16 @@ class GameServer:
                     conn.close()
                     return
                 buf += chunk
-            room_id = json.loads(buf.split("\n")[0]).get("room_id", 1)
-            room_id = int(room_id) if room_id in (1, 2, 3) else 1
+            # skip the ROOM_INFO echo if client sends it back (shouldn't happen)
+            for line in buf.split("\n"):
+                line = line.strip()
+                if line:
+                    msg = json.loads(line)
+                    if "room_id" in msg:
+                        room_id = int(msg["room_id"]) if msg["room_id"] in (1, 2, 3) else 1
+                        break
+            else:
+                room_id = 1
         except Exception:
             conn.close()
             return
@@ -185,8 +198,17 @@ class GameServer:
                     room_id=room_id, exclude_conn=conn
                 )
 
+        elif msg_type == "ENEMY_STOMPED":
+            enemy_idx = message.get("enemy_idx")
+            self.broadcast_room(
+                {"type": "ENEMY_STOMPED", "enemy_idx": enemy_idx},
+                room_id=room_id, exclude_conn=conn
+            )
+
         elif msg_type == "NEXT_LEVEL":
             level = message.get("level", 1)
+            with self.lock:
+                self.rooms[room_id]["gems"] = []   # reset for new level
             print(f"  [Room {room_id}] {player_id} → NEXT_LEVEL {level}")
             self.broadcast_room({"type": "NEXT_LEVEL", "level": level}, room_id=room_id)
 

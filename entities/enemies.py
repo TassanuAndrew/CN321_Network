@@ -1,89 +1,99 @@
 """
-Enemies
+Enemies - angry character with horns
 """
 import pygame
 import math
 from core.config import *
 
+
 class Enemy:
-    """Walking enemy"""
-    
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.width = 28
+        self.width  = 30
         self.height = 28
-        self.vel_x = -ENEMY_SPEED
-        self.vel_y = 0
-        self.alive = True
-        self.animation = 0
-    
+        self.vel_x  = -ENEMY_SPEED
+        self.vel_y  = 0
+        self.alive  = True
+        self.animation = 0.0
+
     def update(self, dt, platforms):
         if not self.alive:
             return
-        
+
         self.animation += dt * 5
-        
-        # Gravity
+
         self.vel_y += GRAVITY
         if self.vel_y > MAX_FALL_SPEED:
             self.vel_y = MAX_FALL_SPEED
-        
-        # Move
+
         self.x += self.vel_x
         self.y += self.vel_y
-        
-        # Platform collision
+
         rect = pygame.Rect(self.x, self.y, self.width, self.height)
-        for platform in platforms:
-            if rect.colliderect(platform.get_rect()):
+        for p in platforms:
+            if rect.colliderect(p.get_rect()):
                 if self.vel_y > 0:
-                    self.y = platform.y - self.height
+                    self.y = p.y - self.height
                     self.vel_y = 0
                 elif self.vel_x > 0:
-                    self.x = platform.x - self.width
+                    self.x = p.x - self.width
                     self.vel_x = -ENEMY_SPEED
                 elif self.vel_x < 0:
-                    self.x = platform.x + platform.width
+                    self.x = p.x + p.width
                     self.vel_x = ENEMY_SPEED
-        
-        # Fall off world
+
         if self.y > WINDOW_HEIGHT:
             self.alive = False
-    
+
     def stomp(self):
         self.alive = False
-    
+
     def get_rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
-    
+
     def draw(self, screen, camera_x):
         if not self.alive:
             return
-        
-        x = self.x - camera_x
-        
-        # Body (rounded)
-        pygame.draw.ellipse(screen, ENEMY_COLOR, (x, self.y, self.width, self.height))
-        
-        # Eyes (animated)
-        blink = int(self.animation) % 10 == 0
+
+        x  = int(self.x - camera_x)
+        y  = int(self.y)
+        cx = x + self.width // 2
+
+        # Shadow
+        pygame.draw.ellipse(screen, (0, 0, 0),
+                            (cx - 12, y + self.height - 3, 24, 5))
+
+        # Feet
+        bounce = abs(int(3 * math.sin(self.animation * 2)))
+        pygame.draw.ellipse(screen, ENEMY_DARK, (x + 2,  y + self.height - 8 + bounce, 10, 8))
+        pygame.draw.ellipse(screen, ENEMY_DARK, (x + 18, y + self.height - 8 - bounce, 10, 8))
+
+        # Body
+        pygame.draw.ellipse(screen, ENEMY_COLOR, (x + 2, y + 6, self.width - 4, self.height - 6))
+        # Shine
+        pygame.draw.ellipse(screen, (240, 110, 130), (x + 7, y + 9, 9, 5))
+
+        # Horns
+        pygame.draw.polygon(screen, ENEMY_HORN, [(x + 7,  y + 7), (x + 3,  y - 5), (x + 11, y + 3)])
+        pygame.draw.polygon(screen, ENEMY_HORN, [(x + 23, y + 7), (x + 27, y - 5), (x + 19, y + 3)])
+
+        # Eyes
+        ey = y + 12
+        blink = int(self.animation) % 12 == 0
+
         if not blink:
-            eye_size = 5
-            eye1_x = x + 8
-            eye2_x = x + 20
-            eye_y = self.y + 12
-            
-            pygame.draw.circle(screen, (255, 255, 255), (eye1_x, eye_y), eye_size)
-            pygame.draw.circle(screen, (255, 255, 255), (eye2_x, eye_y), eye_size)
-            pygame.draw.circle(screen, (0, 0, 0), (eye1_x, eye_y), 3)
-            pygame.draw.circle(screen, (0, 0, 0), (eye2_x, eye_y), 3)
+            for ex in (x + 10, x + 20):
+                pygame.draw.circle(screen, WHITE, (ex, ey), 5)
+                pygame.draw.circle(screen, (30, 30, 80), (ex, ey), 3)
+                pygame.draw.circle(screen, WHITE, (ex, ey - 1), 1)
+            # Angry brows
+            pygame.draw.line(screen, (100, 20, 30), (x + 6,  ey - 6), (x + 14, ey - 4), 2)
+            pygame.draw.line(screen, (100, 20, 30), (x + 24, ey - 6), (x + 16, ey - 4), 2)
         else:
-            # Blink
-            pygame.draw.line(screen, (0, 0, 0), (x + 8, self.y + 12), (x + 14, self.y + 12), 2)
-            pygame.draw.line(screen, (0, 0, 0), (x + 20, self.y + 12), (x + 26, self.y + 12), 2)
-        
-        # Feet (bounce animation)
-        foot_bounce = abs(int(2 * math.sin(self.animation * 2)))
-        pygame.draw.ellipse(screen, (180, 80, 130), (x + 3, self.y + self.height - 8 + foot_bounce, 8, 8))
-        pygame.draw.ellipse(screen, (180, 80, 130), (x + 17, self.y + self.height - 8 - foot_bounce, 8, 8))
+            pygame.draw.line(screen, (30, 30, 80), (x + 6,  ey), (x + 14, ey), 2)
+            pygame.draw.line(screen, (30, 30, 80), (x + 16, ey), (x + 24, ey), 2)
+
+        # Frown
+        pygame.draw.lines(screen, (100, 20, 30), False,
+                          [(x + 10, y + 20), (x + 15, y + 22), (x + 20, y + 20)], 2)

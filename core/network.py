@@ -1,5 +1,6 @@
 """
 Network Client — TCP (reliable) + UDP (fast position)
+Features: auto-reconnect, room info
 """
 import socket
 import threading
@@ -13,11 +14,16 @@ class NetworkClient:
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.host = 'localhost'
         self.port = 5555
-        self.connected = False
-        self.player_id = None
-        self.room_id   = None
-        self.buffer    = ""
-        self.ping_ms   = 0         # latest round-trip time in ms
+        self.connected   = False
+        self.player_id   = None
+        self.room_id     = None
+        self.room_counts = {1: 0, 2: 0, 3: 0}   # filled by get_room_info()
+        self.buffer      = ""
+        self.ping_ms     = 0.0
+
+        # Reconnect state
+        self.reconnecting       = False
+        self.reconnect_attempts = 0
 
         # Callbacks
         self.on_init          = None
@@ -25,26 +31,62 @@ class NetworkClient:
         self.on_player_join   = None
         self.on_player_leave  = None
         self.on_chat          = None
-        self.on_gem_collected = None
-        self.on_next_level    = None
+        self.on_gem_collected  = None
+        self.on_next_level     = None
+        self.on_enemy_stomped  = None
+        self.on_reconnected    = None
 
-    # ----------------------------------------------------------------- connect
-    def connect(self, room_id=1):
+    # --------------------------------------------------------- step 1: info
+    def get_room_info(self):
+        """Open a temporary connection just to read ROOM_INFO, then close it.
+        Can be called multiple times (e.g. lobby refresh). Returns room_counts dict."""
         try:
+            tmp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            tmp.settimeout(2.0)
+            tmp.connect((self.host, self.port))
+            buf = ""
+            while "\n" not in buf:
+                chunk = tmp.recv(1024).decode('utf-8')
+                if not chunk:
+                    break
+                buf += chunk
+            tmp.close()   # close without sending room_id → server discards this connection
+            msg = json.loads(buf.split("\n")[0])
+            if msg.get("type") == "ROOM_INFO":
+                self.room_counts = {int(k): v for k, v in msg.get("rooms", {}).items()}
+        except Exception:
+            self.room_counts = {1: 0, 2: 0, 3: 0}
+        return self.room_counts
+
+    # --------------------------------------------------------- step 2: join
+    def join_room(self, room_id):
+        """Create a fresh connection, read ROOM_INFO, then send room selection."""
+        try:
+            self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.tcp.connect((self.host, self.port))
-            # First message: room selection (server waits for this before INIT)
+            # Server sends ROOM_INFO first — read and discard
+            self.tcp.settimeout(2.0)
+            buf = ""
+            while "\n" not in buf:
+                chunk = self.tcp.recv(1024).decode('utf-8')
+                if not chunk:
+                    break
+                buf += chunk
+            self.tcp.settimeout(None)
+            # Send room selection
+            self.room_id = room_id
             self.tcp.send((json.dumps({"room_id": room_id}) + "\n").encode('utf-8'))
             self.connected = True
             threading.Thread(target=self._receive_tcp, daemon=True).start()
             threading.Thread(target=self._ping_loop,   daemon=True).start()
-            print(f"Connected to {self.host}:{self.port}  |  Room {room_id}")
+            print(f"Joined Room {room_id}")
             return True
         except Exception as e:
-            print(f"Connection failed: {e}")
+            print(f"join_room failed: {e}")
             return False
 
+    # --------------------------------------------------- register UDP addr
     def _register_udp(self):
-        """Tell server our UDP source port so it can map addr -> player_id."""
         try:
             data = json.dumps({"type": "UDP_REGISTER", "player_id": self.player_id}).encode()
             self.udp.sendto(data, (self.host, self.port + 1))
@@ -71,40 +113,84 @@ class NetworkClient:
                 self.connected = False
                 break
 
+        # Connection dropped — start auto-reconnect
+        if not self.reconnecting:
+            self.reconnecting = True
+            self.reconnect_attempts = 0
+            threading.Thread(target=self._reconnect_loop, daemon=True).start()
+
+    def _reconnect_loop(self):
+        """Try to reconnect every 3 seconds until success."""
+        while not self.connected:
+            self.reconnect_attempts += 1
+            time.sleep(3)
+            try:
+                # New sockets
+                self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+                self.tcp.connect((self.host, self.port))
+
+                # Receive ROOM_INFO that server sends first
+                self.tcp.settimeout(3.0)
+                buf = ""
+                while "\n" not in buf:
+                    chunk = self.tcp.recv(1024).decode('utf-8')
+                    if not chunk:
+                        raise Exception("No data")
+                    buf += chunk
+                self.tcp.settimeout(None)
+
+                # Re-join same room
+                self.tcp.send((json.dumps({"room_id": self.room_id}) + "\n").encode('utf-8'))
+                self.connected   = True
+                self.reconnecting = False
+                self.buffer      = ""
+
+                threading.Thread(target=self._receive_tcp, daemon=True).start()
+                threading.Thread(target=self._ping_loop,   daemon=True).start()
+
+                print(f"Reconnected to Room {self.room_id} (attempt {self.reconnect_attempts})")
+
+                if self.on_reconnected:
+                    self.on_reconnected()
+            except Exception:
+                pass   # try again
+
     def _process(self, msg):
         t = msg.get("type")
         if t == "INIT":
             self.player_id = msg.get("player_id")
-            self.room_id   = msg.get("room_id", 1)
+            self.room_id   = msg.get("room_id", self.room_id)
             self._register_udp()
             if self.on_init:
                 self.on_init(msg)
         elif t == "PONG":
             sent = msg.get("timestamp", 0)
-            self.ping_ms = int((time.time() - sent) * 1000)
-        elif t == "PLAYER_MOVE"  and self.on_player_move:
+            self.ping_ms = round((time.time() - sent) * 1000, 2)
+        elif t == "PLAYER_MOVE"   and self.on_player_move:
             self.on_player_move(msg)
-        elif t == "PLAYER_JOIN"  and self.on_player_join:
+        elif t == "PLAYER_JOIN"   and self.on_player_join:
             self.on_player_join(msg)
-        elif t == "PLAYER_LEAVE" and self.on_player_leave:
+        elif t == "PLAYER_LEAVE"  and self.on_player_leave:
             self.on_player_leave(msg)
-        elif t == "CHAT"         and self.on_chat:
+        elif t == "CHAT"          and self.on_chat:
             self.on_chat(msg)
         elif t == "GEM_COLLECTED" and self.on_gem_collected:
             self.on_gem_collected(msg)
-        elif t == "NEXT_LEVEL" and self.on_next_level:
+        elif t == "NEXT_LEVEL"    and self.on_next_level:
             self.on_next_level(msg)
+        elif t == "ENEMY_STOMPED" and self.on_enemy_stomped:
+            self.on_enemy_stomped(msg)
 
-    # ------------------------------------------------------------------- ping
+    # ---------------------------------------------------------------- ping
     def _ping_loop(self):
-        """Send a PING via TCP every second to measure RTT."""
         while self.connected:
             self._send_tcp({"type": "PING", "timestamp": time.time()})
             time.sleep(1)
 
-    # ------------------------------------------------------------------- send
+    # --------------------------------------------------------------- send
     def send_move(self, x, y):
-        """Position goes over UDP — fast, drop-tolerant."""
         try:
             data = json.dumps({"type": "MOVE", "x": x, "y": y}).encode()
             self.udp.sendto(data, (self.host, self.port + 1))
@@ -119,6 +205,9 @@ class NetworkClient:
 
     def send_next_level(self, level):
         self._send_tcp({"type": "NEXT_LEVEL", "level": level})
+
+    def send_enemy_stomp(self, enemy_idx):
+        self._send_tcp({"type": "ENEMY_STOMPED", "enemy_idx": enemy_idx})
 
     def _send_tcp(self, data):
         if self.connected:

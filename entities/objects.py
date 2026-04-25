@@ -1,138 +1,190 @@
 """
-Platforms and decorations
+Platforms, Trees, Clouds, Gems
 """
 import pygame
 import math
 from core.config import *
 
+
 class Platform:
-    """Platform tile"""
-    
     def __init__(self, x, y, width=TILE_SIZE, height=TILE_SIZE):
         self.x = x
         self.y = y
-        self.width = width
+        self.width  = width
         self.height = height
-    
+
     def get_rect(self):
         return pygame.Rect(self.x, self.y, self.width, self.height)
-    
+
     def draw(self, screen, camera_x):
-        x = self.x - camera_x
-        
-        # Dark platform body
-        pygame.draw.rect(screen, PLATFORM_DARK, (x, self.y, self.width, self.height))
-        
-        # Grass on top
-        grass_height = 8
-        pygame.draw.rect(screen, GRASS_GREEN, (x, self.y, self.width, grass_height))
-        
-        # Grass texture
-        for i in range(0, int(self.width), 6):
-            grass_y = self.y + grass_height - (i % 3)
-            pygame.draw.line(screen, (60, 140, 100), (x + i, self.y), (x + i, grass_y), 2)
-        
-        # Platform texture (stones)
-        for i in range(0, int(self.width), 16):
-            for j in range(grass_height, int(self.height), 16):
-                stone_rect = (x + i + 2, self.y + j + 2, 12, 12)
-                pygame.draw.rect(screen, PLATFORM_LIGHT, stone_rect)
-                pygame.draw.rect(screen, (70, 75, 90), stone_rect, 1)
+        x = int(self.x - camera_x)
+        y = int(self.y)
+        w = int(self.width)
+        h = int(self.height)
+
+        # Stone body
+        pygame.draw.rect(screen, PLATFORM_STONE, (x, y, w, h))
+
+        # Stone tile texture
+        for tx in range(0, w, 16):
+            for ty in range(9, h, 8):
+                sw = min(14, w - tx - 2)
+                sh = min(6,  h - ty - 2)
+                if sw > 1 and sh > 1:
+                    pygame.draw.rect(screen, PLATFORM_LIGHT, (x + tx + 1, y + ty + 1, sw, sh))
+                    pygame.draw.rect(screen, (130, 125, 145), (x + tx + 1, y + ty + 1, sw // 2, 1))
+
+        # Grass top
+        pygame.draw.rect(screen, GRASS_GREEN,  (x, y, w, 9))
+        pygame.draw.rect(screen, GRASS_LIGHT,  (x, y, w, 3))
+
+        # Grass blades
+        for gx in range(2, w - 2, 5):
+            bh = 3 + (gx % 3)
+            pygame.draw.line(screen, (100, 220, 100), (x + gx, y), (x + gx - 1, y - bh), 1)
+
+        # 3D bevel edges
+        pygame.draw.line(screen, GRASS_LIGHT,   (x,     y),     (x + w, y),     1)
+        pygame.draw.line(screen, PLATFORM_LIGHT, (x,     y + 9), (x,     y + h), 1)
+        pygame.draw.line(screen, PLATFORM_DARK,  (x + w - 1, y), (x + w - 1, y + h), 1)
+
 
 class Tree:
-    """Decorative tree"""
-    
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.animation = 0
-    
+        self.animation = 0.0
+
     def update(self, dt):
         self.animation += dt
-    
+
     def draw(self, screen, camera_x):
-        x = self.x - camera_x
-        
-        # Trunk
-        trunk_width = 12
-        trunk_height = 40
-        pygame.draw.rect(screen, TREE_TRUNK, (x - trunk_width//2, self.y - trunk_height, trunk_width, trunk_height))
-        
-        # Leaves (3 circles with animation)
-        sway = int(3 * math.sin(self.animation * 2))
-        
-        # Bottom layer
-        pygame.draw.circle(screen, (80, 160, 110), (x + sway, self.y - trunk_height - 10), 20)
-        pygame.draw.circle(screen, TREE_LEAVES, (x + sway, self.y - trunk_height - 10), 18)
-        
-        # Middle
-        pygame.draw.circle(screen, (70, 150, 100), (x - 10 + sway, self.y - trunk_height - 20), 18)
-        pygame.draw.circle(screen, TREE_LEAVES, (x - 10 + sway, self.y - trunk_height - 20), 16)
-        
-        # Top
-        pygame.draw.circle(screen, (60, 140, 90), (x + 10 + sway, self.y - trunk_height - 25), 16)
-        pygame.draw.circle(screen, TREE_LEAVES, (x + 10 + sway, self.y - trunk_height - 25), 14)
+        x = int(self.x - camera_x)
+        y = int(self.y)
+
+        sway    = int(2 * math.sin(self.animation * 1.5))
+        trunk_w = 10
+        trunk_h = 38
+
+        # Trunk with gradient
+        for i in range(trunk_w):
+            t = abs(i - trunk_w / 2) / (trunk_w / 2)
+            r = int(100 - 30 * t)
+            g = int(65  - 20 * t)
+            b = int(35  - 10 * t)
+            pygame.draw.line(screen, (r, g, b),
+                             (x - trunk_w // 2 + i, y - trunk_h),
+                             (x - trunk_w // 2 + i, y))
+
+        # Bark marks
+        for bh in range(8, trunk_h, 10):
+            pygame.draw.line(screen, (75, 48, 22),
+                             (x - 3, y - bh), (x + 1, y - bh - 3), 1)
+
+        # Leaf layers (bottom → top so top overlaps)
+        layers = [
+            (0,  -trunk_h - 4,  22, TREE_DARK),
+            (-11, -trunk_h - 14, 18, TREE_LEAVES),
+            (11,  -trunk_h - 17, 17, TREE_LEAVES),
+            (0,  -trunk_h - 27, 20, (60, 180, 80)),
+            (0,  -trunk_h - 39, 16, TREE_BRIGHT),
+        ]
+        for lx, ly, lr, lc in layers:
+            px = x + lx + sway
+            py = y + ly
+            pygame.draw.circle(screen, TREE_DARK,  (px + 2, py + 2), lr)
+            pygame.draw.circle(screen, lc,          (px, py), lr)
+            light = (min(255, lc[0] + 40), min(255, lc[1] + 40), min(255, lc[2] + 20))
+            pygame.draw.circle(screen, light, (px - lr // 4, py - lr // 4), lr // 3)
+
 
 class Cloud:
-    """Floating cloud decoration"""
-    
     def __init__(self, x, y, size=1.0):
-        self.x = x
-        self.y = y
-        self.size = size
-        self.speed = 10 * size
-    
+        self.x     = x
+        self.y     = y
+        self.size  = size
+        self.speed = 8 * size
+
     def update(self, dt):
         self.x += self.speed * dt
-        # Wrap around
-        if self.x > 3000:
-            self.x = -100
-    
+        if self.x > 3500:
+            self.x = -200
+
     def draw(self, screen, camera_x):
-        x = self.x - camera_x * 0.5  # Parallax effect
-        
-        # Cloud made of circles
-        base_size = int(20 * self.size)
-        pygame.draw.circle(screen, CLOUD_WHITE, (int(x), int(self.y)), base_size)
-        pygame.draw.circle(screen, CLOUD_WHITE, (int(x - 15 * self.size), int(self.y + 5)), int(base_size * 0.8))
-        pygame.draw.circle(screen, CLOUD_WHITE, (int(x + 15 * self.size), int(self.y + 5)), int(base_size * 0.8))
-        pygame.draw.circle(screen, CLOUD_WHITE, (int(x), int(self.y + 10)), int(base_size * 0.9))
+        x = int(self.x - camera_x * 0.4)
+        y = int(self.y)
+        s = self.size
+
+        # Shadow layer
+        for ox, oy, r in [
+            (2,  4, 18), (-int(14*s)+2, int(6*s)+4, 14),
+            (int(14*s)+2, int(6*s)+4, 14), (-int(7*s)+2, int(3*s)+4, 16),
+            (int(7*s)+2, int(3*s)+4, 16),
+        ]:
+            pygame.draw.circle(screen, CLOUD_SHADOW, (x + ox, y + oy), int(r * s))
+
+        # White layer
+        for ox, oy, r in [
+            (0, 0, 20), (-int(15*s), int(6*s), 15),
+            (int(15*s), int(6*s), 15), (-int(7*s), int(3*s), 16),
+            (int(7*s), int(3*s), 16),
+        ]:
+            pygame.draw.circle(screen, CLOUD_WHITE, (x + ox, y + oy), int(r * s))
+
+        # Highlight
+        pygame.draw.circle(screen, (255, 255, 255), (x - int(5*s), y - int(5*s)), int(8*s))
+
 
 class Gem:
-    """Collectible gem"""
-    
     def __init__(self, x, y):
-        self.x = x
-        self.y = y
+        self.x         = x
+        self.y         = y
         self.collected = False
-        self.animation = 0
-        self.bob_offset = 0
-    
+        self.animation = 0.0
+        self.bob_offset = 0.0
+        self.rotation   = 0.0
+
     def update(self, dt):
-        self.animation += dt * 5
-        self.bob_offset = math.sin(self.animation) * 5
-    
+        self.animation  += dt * 3
+        self.bob_offset  = math.sin(self.animation) * 4
+        self.rotation   += dt * 120   # degrees / second
+
     def draw(self, screen, camera_x):
         if self.collected:
             return
-        
-        x = self.x - camera_x
-        y = self.y + self.bob_offset
-        
-        # Diamond shape
-        points = [
-            (x, y - 10),
-            (x + 8, y),
-            (x, y + 10),
-            (x - 8, y)
-        ]
-        pygame.draw.polygon(screen, GEM_COLOR, points)
-        pygame.draw.polygon(screen, (255, 150, 200), points, 2)
-        
-        # Sparkle
-        if int(self.animation * 2) % 2 == 0:
-            pygame.draw.line(screen, (255, 255, 255), (x - 12, y), (x + 12, y), 2)
-            pygame.draw.line(screen, (255, 255, 255), (x, y - 12), (x, y + 12), 2)
-    
+
+        cx = int(self.x - camera_x)
+        cy = int(self.y + self.bob_offset)
+        r  = math.radians(self.rotation)
+
+        def diamond(cx, cy, size):
+            pts = []
+            for i, angle in enumerate([r, r + math.pi/2, r + math.pi, r + 3*math.pi/2]):
+                d = size * 1.4 if i % 2 == 0 else size * 0.7
+                pts.append((cx + int(math.cos(angle) * d),
+                             cy + int(math.sin(angle) * d)))
+            return pts
+
+        # Outer glow (simple larger version, dimmer)
+        glow_pts = diamond(cx, cy, 13)
+        pygame.draw.polygon(screen, (180, 30, 130), glow_pts)
+
+        # Main gem
+        outer_pts = diamond(cx, cy, 10)
+        pygame.draw.polygon(screen, GEM_COLOR, outer_pts)
+
+        # Inner highlight
+        inner_pts = diamond(cx, cy, 5)
+        pygame.draw.polygon(screen, GEM_INNER, inner_pts)
+
+        # Rotating sparkle arms
+        spark_r = r + self.animation * 0.4
+        for angle in (spark_r, spark_r + math.pi):
+            sx1 = cx + int(math.cos(angle) * 2)
+            sy1 = cy + int(math.sin(angle) * 2)
+            sx2 = cx + int(math.cos(angle) * 16)
+            sy2 = cy + int(math.sin(angle) * 16)
+            pygame.draw.line(screen, WHITE, (sx1, sy1), (sx2, sy2), 1)
+
     def get_rect(self):
         return pygame.Rect(self.x - 8, self.y - 10, 16, 20)

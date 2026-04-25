@@ -1,50 +1,83 @@
 """
-Mario Maker Style Platformer - Configuration
+Game Configuration & Color Palette
 """
 
 # Screen
-WINDOW_WIDTH = 1000
+WINDOW_WIDTH  = 1000
 WINDOW_HEIGHT = 700
-FPS = 60  
+FPS = 60
 
-# Colors - Beautiful palette inspired by the image
-SKY_COLOR = (210, 190, 160)  # Tan/beige sky
-CLOUD_WHITE = (255, 255, 255)
-PLATFORM_DARK = (90, 85, 110)  # Dark purple-gray
-PLATFORM_LIGHT = (120, 140, 160)  # Light blue-gray
-GRASS_GREEN = (80, 150, 120)  # Teal green
-TREE_TRUNK = (140, 100, 80)  # Brown
-TREE_LEAVES = (100, 180, 140)  # Green
-WATER_BLUE = (120, 160, 200)
-PLAYER_COLOR = (100, 120, 200)  # Blue
-ENEMY_COLOR = (200, 100, 150)  # Pink/purple
-GEM_COLOR = (255, 100, 150)  # Pink gem
-COIN_COLOR = (255, 200, 50)
-GREEN = (0, 255, 0)  
-WHITE = (255, 255, 255)  
+# Sky gradient
+SKY_TOP    = (15, 30, 90)
+SKY_BOTTOM = (100, 160, 220)
+SKY_COLOR  = (100, 160, 220)   # fallback
 
-# Physics
-GRAVITY = 0.6
-JUMP_SPEED = -14
-MOVE_SPEED = 4
-MAX_FALL_SPEED = 12
+# Clouds
+CLOUD_WHITE  = (245, 250, 255)
+CLOUD_SHADOW = (190, 210, 230)
+
+# Mountains
+MOUNTAIN_FAR  = (45, 60, 105)
+MOUNTAIN_NEAR = (55, 80, 95)
+
+# Platforms
+PLATFORM_STONE = (80, 75, 95)
+PLATFORM_LIGHT = (120, 115, 135)
+PLATFORM_DARK  = (60, 55, 75)
+GRASS_GREEN    = (55, 175, 75)
+GRASS_LIGHT    = (85, 210, 100)
+
+# Trees
+TREE_TRUNK   = (100, 65, 35)
+TREE_LEAVES  = (45, 165, 70)
+TREE_DARK    = (30, 130, 55)
+TREE_BRIGHT  = (75, 195, 90)
+
+# Water
+WATER_TOP    = (50, 130, 210)
+WATER_BOTTOM = (25, 75, 155)
+WATER_BLUE   = (50, 130, 210)
 
 # Player
-PLAYER_SIZE = 32
-
-# Tile
-TILE_SIZE = 48
+PLAYER_COLOR = (70, 130, 220)
+PLAYER_HEAD  = (255, 205, 160)
+PLAYER_LEG   = (45, 75, 160)
+PLAYER_HAT   = (50, 80, 210)
+PLAYER_BAND  = (255, 205, 50)
 
 # Enemy
+ENEMY_COLOR = (220, 70, 90)
+ENEMY_DARK  = (175, 45, 65)
+ENEMY_HORN  = (170, 40, 60)
+
+# Gem
+GEM_COLOR = (255, 55, 175)
+GEM_INNER = (255, 185, 235)
+GEM_GLOW  = (255, 100, 200)
+
+# Misc
+COIN_COLOR = (255, 200, 50)
+GREEN = (0, 255, 0)
+WHITE = (255, 255, 255)
+
+# Physics
+GRAVITY       = 0.6
+JUMP_SPEED    = -14
+MOVE_SPEED    = 4
+MAX_FALL_SPEED = 12
+
+# Sizes
+PLAYER_SIZE = 32
+TILE_SIZE   = 48
 ENEMY_SPEED = 1.5
 
 # Camera
 CAMERA_SMOOTHNESS = 0.1
 
-# Network ports
-TCP_PORT = 5555
-UDP_PORT = 5556   # position updates (fast, drop-tolerant)
-
 # Decorations
 MAX_CLOUDS = 20
-MAX_TREES = 15
+MAX_TREES  = 15
+
+# Network ports
+TCP_PORT = 5555
+UDP_PORT = 5556
