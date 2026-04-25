@@ -20,12 +20,13 @@ class NetworkClient:
         self.ping_ms   = 0         # latest round-trip time in ms
 
         # Callbacks
-        self.on_init         = None
-        self.on_player_move  = None
-        self.on_player_join  = None
-        self.on_player_leave = None
-        self.on_chat         = None
+        self.on_init          = None
+        self.on_player_move   = None
+        self.on_player_join   = None
+        self.on_player_leave  = None
+        self.on_chat          = None
         self.on_gem_collected = None
+        self.on_next_level    = None
 
     # ----------------------------------------------------------------- connect
     def connect(self, room_id=1):
@@ -91,6 +92,8 @@ class NetworkClient:
             self.on_chat(msg)
         elif t == "GEM_COLLECTED" and self.on_gem_collected:
             self.on_gem_collected(msg)
+        elif t == "NEXT_LEVEL" and self.on_next_level:
+            self.on_next_level(msg)
 
     # ------------------------------------------------------------------- ping
     def _ping_loop(self):
@@ -113,6 +116,9 @@ class NetworkClient:
 
     def send_gem(self, gem_id):
         self._send_tcp({"type": "GEM", "gem_id": gem_id})
+
+    def send_next_level(self, level):
+        self._send_tcp({"type": "NEXT_LEVEL", "level": level})
 
     def _send_tcp(self, data):
         if self.connected:

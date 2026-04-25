@@ -179,10 +179,16 @@ class GameServer:
                 else:
                     should_broadcast = False
             if should_broadcast:
+                # Exclude sender — they already updated locally (optimistic)
                 self.broadcast_room(
                     {"type": "GEM_COLLECTED", "player_id": player_id, "gem_id": gem_id},
-                    room_id=room_id
+                    room_id=room_id, exclude_conn=conn
                 )
+
+        elif msg_type == "NEXT_LEVEL":
+            level = message.get("level", 1)
+            print(f"  [Room {room_id}] {player_id} → NEXT_LEVEL {level}")
+            self.broadcast_room({"type": "NEXT_LEVEL", "level": level}, room_id=room_id)
 
         elif msg_type == "PING":
             # Echo timestamp back immediately

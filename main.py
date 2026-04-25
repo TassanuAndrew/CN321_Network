@@ -33,6 +33,7 @@ current_level = 1
 score = 0
 gems_collected = 0
 total_gems = 0
+player_gem_counts = {}   # {player_id: gems collected this level}
 
 # Chat
 chat = ChatBox(10, WINDOW_HEIGHT - 180, 350, 170)
@@ -121,11 +122,12 @@ def show_lobby():
 
 # ------------------------------------------------------------------ LEVEL ---
 def load_level(level_num):
-    global player, platforms, trees, clouds, gems, enemies, level_width, camera_x, gems_collected, total_gems
+    global player, platforms, trees, clouds, gems, enemies, level_width, camera_x, gems_collected, total_gems, player_gem_counts
 
     player = Player(100, 500)
     camera_x = 0
     gems_collected = 0
+    player_gem_counts = {}
 
     if level_num == 1:
         platforms, trees, clouds, gems, enemies, level_width = build_level()
@@ -197,11 +199,25 @@ def on_chat_message(message):
 
 
 def on_gem_collected(message):
-    gem_id = message.get("gem_id")
+    global gems_collected, score, level_complete
+    gem_id       = message.get("gem_id")
+    collector_id = message.get("player_id")
     for gem in gems:
         if id(gem) == gem_id and not gem.collected:
             gem.collected = True
+            gems_collected += 1
+            score += 10
+            player_gem_counts[collector_id] = player_gem_counts.get(collector_id, 0) + 1
+            if gems_collected >= total_gems:
+                level_complete = True
             break
+
+
+def on_next_level(message):
+    global current_level, level_complete
+    current_level = message.get("level", current_level)
+    load_level(current_level)
+    level_complete = False
 
 
 network.on_init          = on_init
@@ -210,6 +226,7 @@ network.on_player_leave  = on_player_leave
 network.on_player_move   = on_player_move
 network.on_chat          = on_chat_message
 network.on_gem_collected = on_gem_collected
+network.on_next_level    = on_next_level
 
 
 # --------------------------------------------------------------- STARTUP ----
@@ -261,9 +278,8 @@ while running:
                 level_complete = False
             elif event.key == pygame.K_n and level_complete:
                 if current_level < 5:
-                    current_level += 1
-                    load_level(current_level)
-                    level_complete = False
+                    network.send_next_level(current_level + 1)
+                    # all clients (including me) load via on_next_level callback
 
         elif event.type == pygame.KEYUP:
             keys.discard(event.key)
@@ -300,6 +316,7 @@ while running:
                 gem.collected = True
                 gems_collected += 1
                 score += 10
+                player_gem_counts[my_player_id] = player_gem_counts.get(my_player_id, 0) + 1
                 network.send_gem(id(gem))
                 if gems_collected >= total_gems:
                     level_complete = True
@@ -393,16 +410,42 @@ while running:
     # Level complete overlay
     if level_complete:
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        pygame.draw.rect(overlay, (0, 0, 0, 150), (0, 0, WINDOW_WIDTH, WINDOW_HEIGHT))
+        pygame.draw.rect(overlay, (0, 0, 0, 180), (0, 0, WINDOW_WIDTH, WINDOW_HEIGHT))
         screen.blit(overlay, (0, 0))
+
+        cy = WINDOW_HEIGHT // 2 - 100
+
         if current_level < 5:
             complete_text = font.render("LEVEL COMPLETE!", True, GRASS_GREEN)
-            next_text     = small_font.render("Press N for next level", True, WHITE)
         else:
             complete_text = font.render("ALL LEVELS COMPLETE!", True, (255, 215, 0))
-            next_text     = small_font.render("You won!", True, WHITE)
-        screen.blit(complete_text, complete_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 30)))
-        screen.blit(next_text,     next_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 10)))
+        screen.blit(complete_text, complete_text.get_rect(center=(WINDOW_WIDTH // 2, cy)))
+        cy += 50
+
+        # Gem summary per player
+        summary_title = small_font.render("── Gems collected ──", True, (200, 200, 200))
+        screen.blit(summary_title, summary_title.get_rect(center=(WINDOW_WIDTH // 2, cy)))
+        cy += 28
+
+        # My row
+        my_count = player_gem_counts.get(my_player_id, 0)
+        my_row = small_font.render(f"You ({my_player_id})  :  {my_count} gems", True, (100, 255, 100))
+        screen.blit(my_row, my_row.get_rect(center=(WINDOW_WIDTH // 2, cy)))
+        cy += 24
+
+        # Other players
+        for pid, pdata in other_players.items():
+            count = player_gem_counts.get(pid, 0)
+            row = small_font.render(f"{pdata['name']} ({pid})  :  {count} gems", True, (255, 200, 100))
+            screen.blit(row, row.get_rect(center=(WINDOW_WIDTH // 2, cy)))
+            cy += 24
+
+        cy += 10
+        if current_level < 5:
+            next_text = small_font.render("Press N to go to next level (any player)", True, WHITE)
+        else:
+            next_text = small_font.render("You won! Thanks for playing!", True, WHITE)
+        screen.blit(next_text, next_text.get_rect(center=(WINDOW_WIDTH // 2, cy)))
 
     # Controls hint
     if chat.active:
