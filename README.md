@@ -1,35 +1,31 @@
-# Multiplayer Platformer Game with Chat System
+# Multiplayer Platformer Game — Final
 
-Socket Programming Project - Real-time multiplayer platformer with live chat using Python & Pygame
+Real-time multiplayer 2D platformer with **TCP + UDP hybrid networking**, **room/lobby system**, **auto-reconnect**, and **live ping display**. Built with Python + Pygame for **CN321 — Data Communication and Computer Networks**.
 
 ---
 
 ## Project Overview
 
-A 2D platformer game featuring real-time multiplayer and chat system built with Socket Programming (TCP/IP). Players can see each other, collect gems, defeat enemies, and communicate through an integrated chat system with speech bubbles.
+A 2D platformer game featuring real-time multiplayer using **Socket Programming**. Players join one of 3 isolated rooms, see each other move in real-time, collect gems cooperatively, defeat enemies, and chat through speech bubbles.
 
----
+This is the **Final version** — extended from the midterm singleplayer build with significant network upgrades.
 
-## Key Features
+### What's New (vs. Midterm)
 
-### Multiplayer System
-- Client-Server architecture using TCP/IP sockets
-- Real-time player position synchronization
-- Support for multiple concurrent players
-- Player join/leave notifications
+| Feature | Description |
+|---|---|
+| **TCP + UDP Hybrid** | TCP for reliable events (chat/gem/level), UDP for fast position updates (~60 fps) |
+| **Room & Lobby System** | 3 isolated rooms with real-time player counts |
+| **Ping Display** | Live RTT measurement via PING/PONG (ms precision) |
+| **Auto-Reconnect** | TCP drop → retry every 3s, rejoin same room automatically |
+| **Cooperative Sync** | Gems / enemies / level synced across all clients (index-based) |
+| **Visual Overhaul** | Gradient sky, parallax mountains, particle FX |
 
-### Chat System
-- Live chat with speech bubbles above characters
-- Messages displayed for 5 seconds
-- Toggle chat window visibility
-- Broadcast messages to all connected players
-
-### Gameplay
-- 5 unique levels with increasing difficulty
-- Collectible gems and enemy NPCs
-- Smooth 60 FPS animations
-- Beautiful pixel art graphics
-- Camera following system
+### Bug Fixes from Midterm
+- `id(gem)` → **list index** (cross-process safe)
+- Gem list reset on `NEXT_LEVEL`
+- Ping uses `round(..., 2)` instead of `int()` (preserves sub-millisecond precision)
+- Lobby refresh runs in a background thread (non-blocking UI)
 
 ---
 
@@ -45,14 +41,14 @@ pip install pygame
 
 **Step 1: Start Server**
 ```bash
-python server.py
+python3 server.py
 ```
 
 **Step 2: Start Client(s)**
 ```bash
-python main.py
+python3 main.py
 ```
-Open multiple terminals to run multiple clients for multiplayer.
+Open multiple terminals to run multiple clients for multiplayer testing.
 
 ---
 
@@ -66,25 +62,26 @@ Open multiple terminals to run multiple clients for multiplayer.
 | Cancel Chat | ESC |
 | Toggle Chat Window | TAB |
 | Restart Level | R |
+| Next Level | N |
 
 ---
 
 ## Project Structure
 ```
-platformer_with_multiplayer/
-├── server.py              # Socket server (TCP/IP)
-├── main.py                # Game client
+multiplayer-platformer-game/
+├── server.py              # TCP + UDP server with room system
+├── main.py                # Game client (lobby + game loop)
 ├── core/
-│   ├── config.py          # Game configuration
-│   └── network.py         # Network client module
+│   ├── config.py          # Constants & color palette
+│   └── network.py         # NetworkClient (TCP+UDP, auto-reconnect)
 ├── entities/
 │   ├── player.py          # Player character logic
-│   ├── objects.py         # Platforms, trees, gems
+│   ├── objects.py         # Platforms, trees, clouds, gems
 │   └── enemies.py         # Enemy AI
 ├── levels/
-│   └── builder.py         # Level designs (5 levels)
+│   └── builder.py         # Level designs
 └── ui/
-    └── chat.py            # Chat interface
+    └── chat.py            # Chat interface + speech bubbles
 ```
 
 ---
@@ -92,134 +89,155 @@ platformer_with_multiplayer/
 ## Technical Implementation
 
 ### Network Architecture
-- **Protocol:** TCP/IP
-- **Port:** 5555
-- **Data Format:** JSON
-- **Server:** Multi-threaded to handle concurrent connections
-- **Client:** Asynchronous message handling with callbacks
 
-### Message Protocol
+| Layer | Protocol | Port | Use Case |
+|---|---|---|---|
+| Reliable channel | **TCP** | 5555 | INIT, CHAT, GEM, ENEMY_STOMPED, NEXT_LEVEL, PING/PONG |
+| Fast channel | **UDP** | 5556 | MOVE / PLAYER_MOVE (~60 fps) |
 
-| Message Type | Purpose | Example |
-|--------------|---------|---------|
-| INIT | Connection handshake | `{"type": "INIT", "player_id": "P1"}` |
-| MOVE | Position update | `{"type": "MOVE", "x": 100, "y": 200}` |
-| CHAT | Chat message | `{"type": "CHAT", "text": "Hello!"}` |
-| GEM | Item collected | `{"type": "GEM", "gem_id": 12345}` |
-| PLAYER_JOIN | New player | `{"type": "PLAYER_JOIN", "player_id": "P2"}` |
-| PLAYER_LEAVE | Player disconnect | `{"type": "PLAYER_LEAVE", "player_id": "P2"}` |
+- **Server:** Multi-threaded — 1 thread per connected client + 1 dedicated UDP receiver thread
+- **Client:** Daemon threads for `_receive_tcp` and `_ping_loop` (non-blocking game loop)
+- **Data Format:** JSON, newline (`\n`) delimited
+- **Concurrency:** `threading.Lock` protects shared room/player state
 
 ### Architecture Diagram
 ```
-       Server (server.py)
-              |
-    ┌─────────┼─────────┐
-    |         |         |
-Client 1  Client 2  Client 3
- (P1)      (P2)      (P3)
-    |         |         |
-    └─────────┴─────────┘
-       TCP/IP (Port 5555)
+   Client 1 ─┐                        ┌─ Client 3
+   (Room 1)  │                        │  (Room 2)
+             ├──── TCP :5555 ────► SERVER
+   Client 2 ─┤◄───  UDP :5556  ────┤  ├─ Client N
+   (Room 1)  │                        │  (Room 3)
+             └────────────────────────┘
+                  Rooms: {1, 2, 3}
+                  Thread per client
 ```
 
-### Server Implementation
+### Message Protocol
 
-**Key Components:**
-- Socket creation and binding to port 5555
-- Threading for handling multiple clients concurrently
-- JSON-based message parsing and routing
-- Broadcast mechanism for game state updates
-- Client connection management (connect/disconnect)
+All messages are JSON, terminated by `\n`.
 
-**Code Flow:**
-```python
-1. Create socket and bind to address
-2. Listen for incoming connections
-3. For each connection:
-   - Accept connection
-   - Create new thread for client
-   - Handle client messages in loop
-   - Broadcast updates to other clients
-4. Handle disconnections gracefully
+| Type | Direction | Channel | Payload |
+|------|-----------|---------|---------|
+| `ROOM_INFO` | Server → Client | TCP | `{rooms: {1: 2, 2: 0, 3: 1}}` |
+| `INIT` | Server → Client | TCP | `player_id, room_id, game_state` |
+| `MOVE` | Client → Server | **UDP** | `x, y` |
+| `PLAYER_MOVE` | Server → Clients | **UDP→TCP bcast** | `player_id, x, y` |
+| `PLAYER_JOIN` | Server → Clients | TCP | `player_id, player_data` |
+| `PLAYER_LEAVE` | Server → Clients | TCP | `player_id` |
+| `CHAT` | Both | TCP | `player_id, name, text` |
+| `GEM` / `GEM_COLLECTED` | Both | TCP | `gem_id` (list index) |
+| `ENEMY_STOMPED` | Both | TCP | `enemy_idx` |
+| `NEXT_LEVEL` | Both | TCP | `level` |
+| `PING` / `PONG` | Both | TCP | `timestamp` |
+
+### Connection & Lobby Flow
+
+```
+1. Client opens temp TCP socket → reads ROOM_INFO → closes
+   (server discards connection that never sends room_id)
+
+2. Lobby UI displays player counts per room
+
+3. Client picks room → opens fresh TCP socket
+   → reads (and discards) ROOM_INFO
+   → sends {"room_id": N}
+
+4. Server creates player_id, returns INIT with game_state
+
+5. Client registers UDP address with UDP_REGISTER message
+
+6. Game loop runs:
+   - MOVE via UDP every frame
+   - GEM/CHAT/EVENTS via TCP as they happen
+   - PING via TCP every 1s
 ```
 
-### Client Implementation
+### Auto-Reconnect
 
-**Key Components:**
-- Socket connection to server
-- Asynchronous message receiver thread
-- Game state synchronization
-- User input handling
-- Chat interface integration
+When the TCP socket drops:
+1. `recv()` raises an exception → `connected = False`
+2. Background thread sleeps 3s, then tries `tcp.connect()` again
+3. On success: re-reads `ROOM_INFO`, re-sends original `room_id`, re-registers UDP
+4. Triggers `on_reconnected()` callback (chat shows "Reconnected!")
 
-**Code Flow:**
+The main game loop never blocks — players keep playing locally during reconnect attempts.
+
+### Cooperative Sync (Why list index, not `id()`)
+
+Python's `id(obj)` returns a memory address that **differs per process**. Two clients running the same level get totally different `id()` values for the "same" gem, breaking sync.
+
+**Solution:** Use the gem's **index in the level's gem list** (0, 1, 2, ...). The list is built deterministically from `levels/builder.py`, so index N refers to the same gem on every client.
+
 ```python
-1. Connect to server
-2. Start receive thread for incoming messages
-3. Game loop:
-   - Process user input
-   - Update local game state
-   - Send position updates to server
-   - Render other players from received data
-   - Handle chat messages
+# WRONG — different per process
+self.network.send_gem(id(gem))
+
+# CORRECT — same on every client
+self.network.send_gem(gem_index)
 ```
 
 ---
 
 ## Learning Objectives
 
-This project demonstrates key concepts in:
+This project covers core concepts from CN321:
 
-**Network Programming:**
-- Socket Programming (TCP/IP)
-- Client-Server Architecture
-- Multi-threading and Concurrency
-- Network Protocol Design
-- Real-time Data Synchronization
-- JSON Serialization/Deserialization
+**Network Programming**
+- TCP vs. UDP trade-offs (reliability vs. latency)
+- Socket lifecycle: `bind` / `listen` / `accept` / `recv` / `send` / `sendto` / `recvfrom`
+- Multi-protocol server (one process, two ports)
+- Connection state management & graceful disconnect handling
+- RTT measurement (PING/PONG)
+- Auto-recovery from network failure
 
-**Software Engineering:**
-- Modular code organization
-- Event-driven programming
-- State management
-- Error handling in networked applications
+**Concurrency**
+- Thread-per-client server pattern
+- Daemon threads for background I/O
+- `threading.Lock` for shared mutable state
+- Non-blocking UI through background workers
 
-**Game Development:**
-- Game loop implementation
-- Collision detection
-- Entity management
-- Camera systems
-- User interface design
+**Protocol Design**
+- JSON message envelopes with type-based routing
+- Newline delimiter framing for stream-based TCP
+- Optimistic local update + authoritative server broadcast
+- Selective broadcast (`exclude_conn` / `exclude_player`) and inclusive broadcast
+- Room-scoped message routing
 
 ---
 
 ## Troubleshooting
 
-**Issue:** Connection refused  
-**Solution:** Ensure server is running before starting clients
+**Connection refused** — Ensure `server.py` is running before starting any client.
 
-**Issue:** Port already in use  
-**Solution:**
+**Port already in use**
 ```bash
 lsof -i :5555
+lsof -i :5556
 kill -9 <PID>
 ```
 
-**Issue:** Players not visible  
-**Solution:** Check that server shows both clients connected
+**Players not visible** — Check the server console — both clients must show `+ PN joined Room X`.
 
-**Issue:** Chat not working  
-**Solution:** Verify network connectivity and check server logs
+**Ping shows 0 ms** — Make sure you're on the latest code; older `int()` rounding has been replaced with `round(..., 2)`.
+
+**Chat not working** — Verify the TCP connection (look for `Reconnecting...` HUD text); CHAT goes over TCP only.
+
+**Stuck on lobby** — `get_room_info()` has a 2s timeout; if the server is unreachable it returns zeros and the lobby still loads.
 
 ---
 
-## Further Development
+## Possible Extensions
 
-Possible extensions to this project:
-- UDP protocol for position updates (reduced latency)
-- Player authentication system
-- Game state persistence
+- Server-authoritative collision (anti-cheat)
+- Player authentication / persistent profiles
 - Spectator mode
-- Voice chat integration
-- Lag compensation algorithms
-- Multiple game rooms/lobbies
+- Replay system (record JSON message stream)
+- Lag compensation / client-side prediction
+- WebSocket gateway for browser clients
+- Dockerized server deployment
+
+---
+
+## Course
+
+**CN321 — Data Communication and Computer Networks** · Final Project · Group **MonoUnit**
