@@ -12,7 +12,7 @@ class NetworkClient:
     def __init__(self):
         self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.host = 'localhost'
+        self.host = '192.168.0.11'
         self.port = 5555
         self.connected   = False
         self.player_id   = None

@@ -8,7 +8,7 @@ import json
 import time
 
 class GameServer:
-    def __init__(self, host='localhost', port=5555):
+    def __init__(self, host='192.168.0.11', port=5555):
         self.host = host
         self.port = port
         self.tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
