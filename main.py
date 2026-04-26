@@ -557,7 +557,7 @@ while running:
         cy += 50
 
         # Gem summary per player
-        summary_title = small_font.render("── Gems Collected ──", True, (200, 200, 200))
+        summary_title = small_font.render(" Gems Collected ", True, (200, 200, 200))
         screen.blit(summary_title, summary_title.get_rect(center=(WINDOW_WIDTH // 2, cy)))
         cy += 28
 
